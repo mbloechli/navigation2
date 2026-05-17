@@ -18,8 +18,7 @@
 #include <vector>
 #include <algorithm>
 #include <utility>
-#include <unordered_map>
-#include <cstdint>
+#include <queue>
 #include <cmath>
 
 #ifdef _OPENMP
@@ -259,81 +258,6 @@ AsymmetricInflationLayer::extractLocalPath(
   return local_path_pts;
 }
 
-int8_t
-AsymmetricInflationLayer::computeObstacleSide(
-  double cx, double cy,
-  const std::vector<size_t> & candidates,
-  const std::vector<std::pair<double, double>> & local_path_pts)
-{
-  const double inflation_radius_sq = inflation_radius_ * inflation_radius_;
-
-  double min_dist_sq = std::numeric_limits<double>::max();
-  double best_cross = 0.0;
-
-  // Evaluate candidate segments provided by the spatial hash.
-  for (size_t p : candidates) {
-    // Define segment endpoints A (start) and B (end).
-    double ax = local_path_pts[p].first;
-    double ay = local_path_pts[p].second;
-    double bx = local_path_pts[p + 1].first;
-    double by = local_path_pts[p + 1].second;
-
-    // Skip cells outside of the segment bounding box expanded by the inflation radius.
-    double min_x = std::min(ax, bx) - inflation_radius_;
-    double max_x = std::max(ax, bx) + inflation_radius_;
-    if (cx < min_x || cx > max_x) {continue;}
-
-    double min_y = std::min(ay, by) - inflation_radius_;
-    double max_y = std::max(ay, by) + inflation_radius_;
-    if (cy < min_y || cy > max_y) {continue;}
-
-    // Calculate distance to path segment and orientation via cross product.
-    // Vectors: AB (path segment) and AC (path to cell)
-    double abx = bx - ax;
-    double aby = by - ay;
-    double len_sq = abx * abx + aby * aby;
-
-    double acx = cx - ax;
-    double acy = cy - ay;
-
-    double dist_sq;
-    double cross;
-
-    // Prevent division by zero for zero-length segments
-    if (len_sq < 1e-10) {
-      dist_sq = acx * acx + acy * acy;
-      cross = 0.0;
-    } else {
-      // 't': Scalar projection of C onto AB, clamped to segment bounds [0, 1]
-      double t = std::clamp((acx * abx + acy * aby) / len_sq, 0.0, 1.0);
-
-      // Vector from the projected point on AB to C
-      double proj_dx = acx - t * abx;
-      double proj_dy = acy - t * aby;
-      dist_sq = proj_dx * proj_dx + proj_dy * proj_dy;
-
-      // 2D cross product for orientation (Positive = Left, Negative = Right)
-      cross = abx * acy - aby * acx;
-    }
-
-    // Update if shortest distance so far
-    if (dist_sq < min_dist_sq) {
-      min_dist_sq = dist_sq;
-      best_cross = cross;
-    }
-  }
-
-  // Check if the cell is outside the inflation radius.
-  if (min_dist_sq > inflation_radius_sq) {
-    return 0;
-  }
-
-  // Return the orientation based on the cross product of the closest segment.
-  if (best_cross > 0.0) {return 1;}    // Left
-  if (best_cross < 0.0) {return -1;}   // Right
-
-  return 0;  // Neutral/On the line
-}
 
 void
 AsymmetricInflationLayer::updateCosts(
@@ -379,11 +303,9 @@ AsymmetricInflationLayer::updateCosts(
   const int roi_width = roi_max_i - roi_min_i;
   const int roi_height = roi_max_j - roi_min_j;
 
-  auto spatial_hash = buildPathSpatialHash(local_path_pts);
-
   MatrixXfRM dist_map = seedDistanceMap(
     master_grid, roi_min_i, roi_min_j, roi_width, roi_height,
-    spatial_hash, local_path_pts);
+    local_path_pts);
 
   DistanceTransform::distanceTransform2D(dist_map, roi_height, roi_width);
 
@@ -395,113 +317,154 @@ AsymmetricInflationLayer::updateCosts(
   setCurrent(true);
 }
 
-std::unordered_map<uint64_t, std::vector<size_t>>
-AsymmetricInflationLayer::buildPathSpatialHash(
-  const std::vector<std::pair<double, double>> & local_path_pts)
-{
-  std::unordered_map<uint64_t, std::vector<size_t>> spatial_hash;
-
-  for (size_t p = 0; p < local_path_pts.size() - 1; ++p) {
-    // Create segment AB from consecutive path points
-    double ax = local_path_pts[p].first;
-    double ay = local_path_pts[p].second;
-    double bx = local_path_pts[p + 1].first;
-    double by = local_path_pts[p + 1].second;
-
-    // Pad the segment's bounding box by the inflation radius.
-    double min_x = std::min(ax, bx) - inflation_radius_;
-    double max_x = std::max(ax, bx) + inflation_radius_;
-    double min_y = std::min(ay, by) - inflation_radius_;
-    double max_y = std::max(ay, by) + inflation_radius_;
-
-    // Find which buckets this padded segment touches
-    int64_t min_bx = static_cast<int64_t>(std::floor(min_x / inflation_radius_));
-    int64_t max_bx = static_cast<int64_t>(std::floor(max_x / inflation_radius_));
-    int64_t min_by = static_cast<int64_t>(std::floor(min_y / inflation_radius_));
-    int64_t max_by = static_cast<int64_t>(std::floor(max_y / inflation_radius_));
-
-    for (int64_t b_x = min_bx; b_x <= max_bx; ++b_x) {
-      for (int64_t b_y = min_by; b_y <= max_by; ++b_y) {
-        // Bitwise magic to safely map 2D signed coordinates into a 1D unsigned 64-bit key
-        uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(b_x)) << 32) |
-          (static_cast<uint32_t>(b_y));
-
-        spatial_hash[key].push_back(p);
-      }
-    }
-  }
-
-  return spatial_hash;
-}
-
 MatrixXfRM
 AsymmetricInflationLayer::seedDistanceMap(
   nav2_costmap_2d::Costmap2D & master_grid,
   int roi_min_i, int roi_min_j, int roi_width, int roi_height,
-  const std::unordered_map<uint64_t, std::vector<size_t>> & spatial_hash,
   const std::vector<std::pair<double, double>> & local_path_pts)
 {
   unsigned char * master_array = master_grid.getCharMap();
   const unsigned int size_x = master_grid.getSizeInCellsX();
   const unsigned int size_y = master_grid.getSizeInCellsY();
+  const int roi_max_i = roi_min_i + roi_width;
+  const int roi_max_j = roi_min_j + roi_height;
+  const int r_cells = static_cast<int>(cell_inflation_radius_);
+  const int r2 = r_cells * r_cells;
 
   MatrixXfRM dist_map(roi_height, roi_width);
   dist_map.setConstant(DistanceTransform::DT_INF);
 
-  int8_t disfavored_side = (cost_scaling_factor_left_ < cost_scaling_factor_right_) ? 1 : -1;
-  const int roi_max_i = roi_min_i + roi_width;
-  const int roi_max_j = roi_min_j + roi_height;
+  const int8_t disfavored_side = (cost_scaling_factor_left_ < cost_scaling_factor_right_) ? 1 : -1;
 
-  // Helper function to check if a neighbor is "traversable" (i.e., open space)
   auto is_traversable = [&](int nx, int ny) {
       unsigned char c = master_array[master_grid.getIndex(nx, ny)];
       return inflate_around_unknown_ ?
              (c != LETHAL_OBSTACLE && c != NO_INFORMATION) : (c != LETHAL_OBSTACLE);
     };
 
-  // Seed all obstacle boundary cells, that are nearby a path segment
-  for (int j = roi_min_j; j < roi_max_j; ++j) {
-    for (int i = roi_min_i; i < roi_max_i; ++i) {
-      unsigned char cost = master_array[master_grid.getIndex(i, j)];
+  // BFS state: segment index of nearest path cell (-1 = unvisited)
+  std::vector<int> visited(roi_width * roi_height, -1);
+  std::vector<int> src_x_arr(roi_width * roi_height, 0);
+  std::vector<int> src_y_arr(roi_width * roi_height, 0);
 
-      // Early exit 1: Skip cells that aren't lethal/unknown obstacles
-      if (cost != LETHAL_OBSTACLE && !(inflate_around_unknown_ && cost == NO_INFORMATION)) {
+  auto roi_idx = [&](int x, int y) {
+      return (y - roi_min_j) * roi_width + (x - roi_min_i);
+    };
+
+  std::queue<std::pair<int, int>> bfs_queue;
+
+  // Step 1: Rasterize each path segment to grid cells within the ROI.
+  // Stepping at half-cell intervals ensures every grid cell the segment
+  // passes through is seeded.
+  const double res = master_grid.getResolution();
+  const double ox = master_grid.getOriginX();
+  const double oy = master_grid.getOriginY();
+
+  for (size_t p = 0; p < local_path_pts.size() - 1; ++p) {
+    const double ax = local_path_pts[p].first;
+    const double ay = local_path_pts[p].second;
+    const double bx = local_path_pts[p + 1].first;
+    const double by = local_path_pts[p + 1].second;
+
+    const int gax = static_cast<int>((ax - ox) / res);
+    const int gay = static_cast<int>((ay - oy) / res);
+    const int gbx = static_cast<int>((bx - ox) / res);
+    const int gby = static_cast<int>((by - oy) / res);
+
+    const double seg_len_cells = std::hypot(gbx - gax, gby - gay);
+    const int steps = std::max(1, static_cast<int>(std::ceil(seg_len_cells * 2.0)));
+
+    for (int s = 0; s <= steps; ++s) {
+      const double t = static_cast<double>(s) / static_cast<double>(steps);
+      const int cx = static_cast<int>(std::round(gax + t * (gbx - gax)));
+      const int cy = static_cast<int>(std::round(gay + t * (gby - gay)));
+
+      if (cx < roi_min_i || cx >= roi_max_i || cy < roi_min_j || cy >= roi_max_j) {
         continue;
       }
 
-      // Check if the cell touches the absolute edges of the costmap
-      bool is_on_map_edge = (i == 0 || i == static_cast<int>(size_x) - 1 ||
-        j == 0 || j == static_cast<int>(size_y) - 1);
-
-      // An obstacle cell is a boundary if it's on the map edge OR touches free space.
-      bool is_boundary = is_on_map_edge ||
-        is_traversable(i - 1, j) || is_traversable(i + 1, j) ||
-        is_traversable(i, j - 1) || is_traversable(i, j + 1);
-
-      // Early exit 2: Skip interior obstacle cells
-      if (!is_boundary) {
+      const int idx = roi_idx(cx, cy);
+      if (visited[idx] != -1) {
         continue;
       }
 
-      // Find segments that are nearby this cell using the spatial hash
-      double cx, cy;
-      master_grid.mapToWorld(i, j, cx, cy);
-      int64_t b_x = static_cast<int64_t>(std::floor(cx / inflation_radius_));
-      int64_t b_y = static_cast<int64_t>(std::floor(cy / inflation_radius_));
-      uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(b_x)) << 32) |
-        static_cast<uint32_t>(b_y);
+      visited[idx] = static_cast<int>(p);
+      src_x_arr[idx] = cx;
+      src_y_arr[idx] = cy;
+      bfs_queue.emplace(cx, cy);
+    }
+  }
 
-      // Only enqueue boundary cells on the disfavored side of the path.
-      // Cells on favored side already got correctly inflated during the symmetric inflation pass.
-      auto it = spatial_hash.find(key);
-      if (it == spatial_hash.end()) {
+  // Step 2: Multi-source BFS — propagate through free space.
+  // When the wave reaches a LETHAL boundary cell within cell_inflation_radius_,
+  // classify its side via one cross product against the source segment.
+  constexpr int dx4[4] = {1, -1, 0, 0};
+  constexpr int dy4[4] = {0, 0, 1, -1};
+
+  while (!bfs_queue.empty()) {
+    const auto [x, y] = bfs_queue.front();
+    bfs_queue.pop();
+
+    const int idx = roi_idx(x, y);
+    const int sx = src_x_arr[idx];
+    const int sy = src_y_arr[idx];
+    const int seg_idx = visited[idx];
+
+    for (int d = 0; d < 4; ++d) {
+      const int nx = x + dx4[d];
+      const int ny = y + dy4[d];
+
+      if (nx < roi_min_i || nx >= roi_max_i || ny < roi_min_j || ny >= roi_max_j) {
         continue;
       }
 
-      // Determine which side of the path this cell is on
-      int8_t side = computeObstacleSide(cx, cy, it->second, local_path_pts);
-      if (side != 0 && side == disfavored_side) {
-        dist_map(j - roi_min_j, i - roi_min_i) = 0.0f;
+      const int nidx = roi_idx(nx, ny);
+      if (visited[nidx] != -1) {
+        continue;
+      }
+
+      // Prune if outside the inflation radius from the source path cell
+      const int ddx = nx - sx;
+      const int ddy = ny - sy;
+      if (ddx * ddx + ddy * ddy > r2) {
+        continue;
+      }
+
+      const unsigned char cost = master_array[master_grid.getIndex(nx, ny)];
+      const bool is_obstacle = (cost == LETHAL_OBSTACLE) ||
+        (inflate_around_unknown_ && cost == NO_INFORMATION);
+
+      visited[nidx] = seg_idx;
+      src_x_arr[nidx] = sx;
+      src_y_arr[nidx] = sy;
+
+      if (is_obstacle) {
+        // Check boundary: on map edge OR adjacent to free space
+        const bool is_on_map_edge = (nx == 0 || nx == static_cast<int>(size_x) - 1 ||
+          ny == 0 || ny == static_cast<int>(size_y) - 1);
+        const bool is_boundary = is_on_map_edge ||
+          is_traversable(nx - 1, ny) || is_traversable(nx + 1, ny) ||
+          is_traversable(nx, ny - 1) || is_traversable(nx, ny + 1);
+
+        if (is_boundary) {
+          double cx_w, cy_w;
+          master_grid.mapToWorld(nx, ny, cx_w, cy_w);
+
+          const double pax = local_path_pts[seg_idx].first;
+          const double pay = local_path_pts[seg_idx].second;
+          const double pbx = local_path_pts[seg_idx + 1].first;
+          const double pby = local_path_pts[seg_idx + 1].second;
+          // 2D cross product: positive = left of path, negative = right
+          const double cross = (pbx - pax) * (cy_w - pay) - (pby - pay) * (cx_w - pax);
+
+          const int8_t side = (cross > 0.0) ? 1 : (cross < 0.0) ? -1 : 0;
+          if (side != 0 && side == disfavored_side) {
+            dist_map(ny - roi_min_j, nx - roi_min_i) = 0.0f;
+          }
+        }
+        // Do not propagate BFS through obstacles
+      } else {
+        bfs_queue.emplace(nx, ny);
       }
     }
   }

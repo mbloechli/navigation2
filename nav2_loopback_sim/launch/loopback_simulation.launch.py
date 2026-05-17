@@ -44,7 +44,8 @@ def generate_launch_description() -> LaunchDescription:
         output='screen',
         autostart=True,
         parameters=[params_file, {'scan_frame_id': scan_frame_id,
-                                  'use_sim_time': True}],
+                                  'use_sim_time': True,
+                                  'speed_factor': 2.0}],
     )
 
     ld = LaunchDescription()

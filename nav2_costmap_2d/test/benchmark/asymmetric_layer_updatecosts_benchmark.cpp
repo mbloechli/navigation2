@@ -349,14 +349,14 @@ BENCHMARK_DEFINE_F(LegacyInflationFixture, UpdateCosts)(benchmark::State & state
 
 BENCHMARK_REGISTER_F(LegacyInflationFixture, UpdateCosts)
 ->Args({60, 60})      // 3x3 m
-->Args({100, 100})    // 5x5 m
-->Args({200, 200})    // 10x10 m
-->Args({400, 400})    // 20x20 m
-->Args({800, 800})    // 40x40 m
-->Args({1600, 1600})  // 80x80 m
-->Args({3200, 3200})  // 160x160 m
-->Args({6400, 6400})  // 320x320 m
-->Args({12800, 12800})  // 640x640 m
+// ->Args({100, 100})    // 5x5 m
+// ->Args({200, 200})    // 10x10 m
+// ->Args({400, 400})    // 20x20 m
+// ->Args({800, 800})    // 40x40 m
+// ->Args({1600, 1600})  // 80x80 m
+// ->Args({3200, 3200})  // 160x160 m
+// ->Args({6400, 6400})  // 320x320 m
+// ->Args({12800, 12800})  // 640x640 m
 ->Iterations(50)
 ->Unit(benchmark::kMillisecond);
 
@@ -571,17 +571,17 @@ BENCHMARK_DEFINE_F(IncrementalInflationFixture, UpdateCosts)(benchmark::State & 
 }
 
 BENCHMARK_REGISTER_F(IncrementalInflationFixture, UpdateCosts)
-->Args({800, 800, 100})    // 40×40 m map, ~5 m patch
+// ->Args({800, 800, 100})    // 40×40 m map, ~5 m patch
 ->Args({800, 800, 200})    // 40×40 m map, ~10 m patch
-->Args({1600, 1600, 100})  // 80×80 m map, ~5 m patch
+// ->Args({1600, 1600, 100})  // 80×80 m map, ~5 m patch
 ->Args({1600, 1600, 200})  // 80×80 m map, ~10 m patch
-->Args({3200, 3200, 100})  // 160×160 m map, ~5 m patch
+// ->Args({3200, 3200, 100})  // 160×160 m map, ~5 m patch
 ->Args({3200, 3200, 200})  // 160×160 m map, ~10 m patch
-->Args({6400, 6400, 100})  // 320×320 m map, ~5 m patch
+// ->Args({6400, 6400, 100})  // 320×320 m map, ~5 m patch
 ->Args({6400, 6400, 200})  // 320×320 m map, ~10 m patch
-->Args({12800, 12800, 100})  // 640×640 m map, ~5 m patch
+// ->Args({12800, 12800, 100})  // 640×640 m map, ~5 m patch
 ->Args({12800, 12800, 200})  // 640×640 m map, ~10 m patch
-->Args({25600, 25600, 100})  // 1280×1280 m map, ~5 m patch
+// ->Args({25600, 25600, 100})  // 1280×1280 m map, ~5 m patch
 ->Args({25600, 25600, 200})  // 1280×1280 m map, ~10 m patch
 ->Iterations(50)
 ->Unit(benchmark::kMillisecond);
@@ -671,17 +671,17 @@ BENCHMARK_DEFINE_F(IncrementalLegacyInflationFixture, UpdateCosts)(benchmark::St
 
 BENCHMARK_REGISTER_F(IncrementalLegacyInflationFixture, UpdateCosts)
 ->Args({800, 800, 100})    // 40×40 m map, ~5 m patch
-->Args({800, 800, 200})    // 40×40 m map, ~10 m patch
-->Args({1600, 1600, 100})  // 80×80 m map, ~5 m patch
-->Args({1600, 1600, 200})  // 80×80 m map, ~10 m patch
-->Args({3200, 3200, 100})  // 160×160 m map, ~5 m patch
-->Args({3200, 3200, 200})  // 160×160 m map, ~10 m patch
-->Args({6400, 6400, 100})  // 320×320 m map, ~5 m patch
-->Args({6400, 6400, 200})  // 320×320 m map, ~10 m patch
-->Args({12800, 12800, 100})  // 640×640 m map, ~5 m patch
-->Args({12800, 12800, 200})  // 640×640 m map, ~10 m patch
-->Args({25600, 25600, 100})  // 1280×1280 m map, ~5 m patch
-->Args({25600, 25600, 200})  // 1280×1280 m map, ~10 m patch
+// ->Args({800, 800, 200})    // 40×40 m map, ~10 m patch
+// ->Args({1600, 1600, 100})  // 80×80 m map, ~5 m patch
+// ->Args({1600, 1600, 200})  // 80×80 m map, ~10 m patch
+// ->Args({3200, 3200, 100})  // 160×160 m map, ~5 m patch
+// ->Args({3200, 3200, 200})  // 160×160 m map, ~10 m patch
+// ->Args({6400, 6400, 100})  // 320×320 m map, ~5 m patch
+// ->Args({6400, 6400, 200})  // 320×320 m map, ~10 m patch
+// ->Args({12800, 12800, 100})  // 640×640 m map, ~5 m patch
+// ->Args({12800, 12800, 200})  // 640×640 m map, ~10 m patch
+// ->Args({25600, 25600, 100})  // 1280×1280 m map, ~5 m patch
+// ->Args({25600, 25600, 200})  // 1280×1280 m map, ~10 m patch
 ->Iterations(50)
 ->Unit(benchmark::kMillisecond);
 
@@ -843,24 +843,12 @@ BENCHMARK_DEFINE_F(IncrementalAsymmetricFixture, UpdateCosts)(benchmark::State &
 }
 
 BENCHMARK_REGISTER_F(IncrementalAsymmetricFixture, UpdateCosts)
-->Args({800, 800, 100, 0})  // 40×40 m map, ~5 m patch, full diagonal path
-->Args({800, 800, 200, 0})  // 40×40 m map, ~10 m patch, full diagonal path
-->Args({1600, 1600, 100, 0})  // 80×80 m map, ~5 m patch, full diagonal path
-->Args({1600, 1600, 200, 0})  // 80×80 m map, ~10 m patch, full diagonal path
-->Args({3200, 3200, 100, 0})  // 160×160 m map, ~5 m patch, full diagonal path
-->Args({3200, 3200, 200, 0})  // 160×160 m map, ~10 m patch, full diagonal path
-->Args({6400, 6400, 100, 0})  // 320×320 m map, ~5 m patch, full diagonal path
-->Args({6400, 6400, 200, 0})  // 320×320 m map, ~10 m patch, full diagonal path
-->Args({12800, 12800, 100, 0})  // 640×640 m map, ~5 m patch, full diagonal path
-->Args({12800, 12800, 200, 0})  // 640×640 m map, ~10 m patch, full diagonal path
-->Args({25600, 25600, 100, 0})  // 1280×1280 m map, ~5 m patch, full diagonal path
-->Args({25600, 25600, 200, 0})  // 1280×1280 m map, ~10 m patch, full diagonal path
-->Args({800, 800, 100, 20})  // 40×40 m map, ~5 m patch, fixed 20 m path
-->Args({1600, 1600, 100, 20})  // 80×80 m map, ~5 m patch, fixed 20 m path
-->Args({3200, 3200, 100, 20})  // 160×160 m map, ~5 m patch, fixed 20 m path
-->Args({6400, 6400, 100, 20})  // 320×320 m map, ~5 m patch, fixed 20 m path
-->Args({12800, 12800, 100, 20})  // 640×640 m map, ~5 m patch, fixed 20 m path
-->Args({25600, 25600, 100, 20})  // 1280×1280 m map, ~5 m patch, fixed 20 m path
+->Args({800, 800, 200, 50})  // 40×40 m map, ~10 m patch, fixed 50 m path
+->Args({1600, 1600, 200, 50})  // 80×80 m map, ~10 m patch, fixed 50 m path
+->Args({3200, 3200, 200, 50})  // 160×160 m map, ~10 m patch, fixed 50 m path
+->Args({6400, 6400, 200, 50})  // 320×320 m map, ~10 m patch, fixed 50 m path
+->Args({12800, 12800, 200, 50})  // 640×640 m map, ~10 m patch, fixed 50 m path
+->Args({25600, 25600, 200, 50})  // 1280×1280 m map, ~10 m patch, fixed 50 m path
 ->Iterations(50)
 ->Unit(benchmark::kMillisecond);
 

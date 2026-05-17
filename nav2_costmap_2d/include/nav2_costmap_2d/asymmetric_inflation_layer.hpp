@@ -21,8 +21,6 @@
 #include <memory>
 #include <string>
 #include <utility>
-#include <unordered_map>
-#include <cstdint>
 
 #include "rclcpp/rclcpp.hpp"
 #include "nav2_costmap_2d/inflation_layer.hpp"
@@ -127,57 +125,24 @@ protected:
     nav2_costmap_2d::Costmap2D & master_grid);
 
   /**
-   * @brief Classify an obstacle cell as left (+1), right (-1), or neutral (0)
-   *        relative to the closest path segment.
-   *
-   * For each candidate segment, performs an AABB rejection pass followed by an
-   * exact perpendicular-distance and cross-product computation to determine side.
-   * Obstacles whose nearest perpendicular distance exceeds the inflation radius
-   * are returned as 0 (neutral -> symmetric inflation).
-   *
-   * @param cx             World x-coordinate of the obstacle cell (metres).
-   * @param cy             World y-coordinate of the obstacle cell (metres).
-   * @param candidates     Segment indices whose padded AABB may contain (cx, cy).
-   * @param local_path_pts Path points in costmap-frame order; consecutive pairs form segments.
-   * @return +1 (left of path), -1 (right of path), or 0 (neutral / beyond inflation radius).
-   */
-  int8_t computeObstacleSide(
-    double cx, double cy,
-    const std::vector<size_t> & candidates,
-    const std::vector<std::pair<double, double>> & local_path_pts);
-
-  /**
-   * @brief Build a spatial hash mapping 2D bucket keys to path segment indices.
-   *
-   * Uses inflation_radius_ as the bucket size so each bucket spans exactly one
-   * inflation radius. Each segment is inserted into every bucket whose padded
-   * AABB it overlaps, enabling O(1) nearest-segment queries during the disfavored-cell seeding phase.
-   * @param local_path_pts Path waypoints in costmap-frame world coordinates.
-   * @return Hash map from packed (bucket_x, bucket_y) key to segment index list.
-   */
-  std::unordered_map<uint64_t, std::vector<size_t>>
-  buildPathSpatialHash(
-    const std::vector<std::pair<double, double>> & local_path_pts);
-
-  /**
    * @brief Build a distance map seeded from disfavored-side obstacle boundary cells.
    *
-   * Initialises a MatrixXfRM (roi_height × roi_width) to DT_INF, then sets
-   * disfavored boundary cells to 0.0f. The caller passes the result to
-   * DistanceTransform::distanceTransform2D() then applyInflation().
-   * @param master_grid Costmap used for coordinate and cost lookups.
-   * @param roi_min_i Left edge of the padded ROI (cells).
-   * @param roi_min_j Bottom edge of the padded ROI (cells).
-   * @param roi_width Width of the padded ROI (cells).
-   * @param roi_height Height of the padded ROI (cells).
-   * @param spatial_hash Segment lookup structure from buildPathSpatialHash().
+   * Rasterises path segments to grid cells, then runs a multi-source BFS through
+   * free space. When the wave reaches a LETHAL boundary cell within
+   * cell_inflation_radius_, a single cross product against the source segment
+   * determines its side; disfavored cells are set to 0.0f. The caller passes
+   * the result to DistanceTransform::distanceTransform2D() then applyInflation().
+   * @param master_grid    Costmap used for coordinate and cost lookups.
+   * @param roi_min_i      Left edge of the padded ROI (cells).
+   * @param roi_min_j      Bottom edge of the padded ROI (cells).
+   * @param roi_width      Width of the padded ROI (cells).
+   * @param roi_height     Height of the padded ROI (cells).
    * @param local_path_pts Path waypoints in costmap-frame world coordinates.
    * @return Distance map with 0.0f at disfavored seeds and DT_INF elsewhere.
    */
   MatrixXfRM seedDistanceMap(
     nav2_costmap_2d::Costmap2D & master_grid,
     int roi_min_i, int roi_min_j, int roi_width, int roi_height,
-    const std::unordered_map<uint64_t, std::vector<size_t>> & spatial_hash,
     const std::vector<std::pair<double, double>> & local_path_pts);
 
   /**
